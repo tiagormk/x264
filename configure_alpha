@@ -1,0 +1,2 @@
+#!/bin/bash
+./configure --disable-opencl --disable-gpl --enable-static --host=alpha-linux --cross-prefix=alphaev67-unknown-linux-gnu-

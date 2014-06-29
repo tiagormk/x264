@@ -906,6 +906,7 @@ static void help( x264_param_t *defaults, int longhelp )
     H2( "      --opencl                Enable use of OpenCL\n" );
     H2( "      --opencl-clbin <string> Specify path of compiled OpenCL kernel cache\n" );
     H2( "      --opencl-device <integer> Specify OpenCL device ordinal\n" );
+    H2( "      --vitaminsfps <float>   Limit input FPS\n" );
     H2( "      --dump-yuv <string>     Save reconstructed frames\n" );
     H2( "      --sps-id <integer>      Set SPS and PPS id numbers [%d]\n", defaults->i_sps_id );
     H2( "      --aud                   Use access unit delimiters\n" );
@@ -1130,6 +1131,7 @@ static struct option long_options[] =
     { "input-range", required_argument, NULL, OPT_INPUT_RANGE },
     { "stitchable",        no_argument, NULL, 0 },
     { "filler",            no_argument, NULL, 0 },
+    { "vitaminsfps"  ,required_argument, NULL, 0 },
     {0, 0, 0, 0}
 };
 
@@ -1829,6 +1831,20 @@ if( cond )\
     goto fail;\
 }
 
+static void _vitamins_sleep_us(int64_t timeus){
+    if(time <= 0) return;
+    struct timespec req;
+    req.tv_sec = timeus/1000000;
+    req.tv_nsec = (timeus%1000000) * 1000;
+    nanosleep(&req, NULL);
+}
+
+static void _vitamins_check_us(int64_t last_frame_begin, int64_t curr_frame_begin, int64_t timetonext){
+    int64_t tgt = last_frame_begin+timetonext;
+    if(curr_frame_begin >= tgt) return;
+    _vitamins_sleep_us(tgt - curr_frame_begin);
+}
+
 static int encode( x264_param_t *param, cli_opt_t *opt )
 {
     x264_t *h = NULL;
@@ -1852,6 +1868,12 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     double  duration;
     double  pulldown_pts = 0;
     int     retval = 0;
+    int64_t _vitamins_timetonext = 0;//microsec
+    int64_t _vitamins_lastframe_begin_us = 0;//microsec
+    
+    if(param->rc.f_vitaminsfps > 0){
+        _vitamins_timetonext = (int64_t)((1.0/param->rc.f_vitaminsfps)*1000000);
+    }
 
     opt->b_progress &= param->i_log_level < X264_LOG_DEBUG;
 
@@ -1894,6 +1916,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     if( opt->tcfile_out )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
+    _vitamins_lastframe_begin_us = x264_mdate();
+
     /* Encode frames */
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
@@ -1901,6 +1925,11 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             break;
         x264_picture_init( &pic );
         convert_cli_to_lib_pic( &pic, &cli_pic );
+        
+        if(_vitamins_timetonext != 0){
+            _vitamins_check_us(_vitamins_lastframe_begin_us, x264_mdate(), _vitamins_timetonext);
+            _vitamins_lastframe_begin_us = x264_mdate();
+        }
 
         if( !param->b_vfr_input )
             pic.i_pts = i_frame;

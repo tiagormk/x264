@@ -1,0 +1,1 @@
+./x264 --verbose --qp 20 --partitions b8x8,i4x4 --ref 5 --direct auto --weightb --mixed-refs --no-fast-pskip --me umh --subme 7 --analyse b8x8,i4x4 --threads 1 --vitaminsfps 15 -o /parsec/install/inputs/x264/bowing_cif.264 /parsec/install/inputs/x264/bowing_cif.y4m

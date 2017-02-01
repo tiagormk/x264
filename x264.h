@@ -432,6 +432,7 @@ typedef struct x264_param_t
         int         i_zones;        /* number of zone_t's */
         char        *psz_zones;     /* alternate method of specifying zones */
         float       f_vitaminsfps;
+        float       f_beatsrate;
     } rc;
 
     /* Cropping Rectangle parameters: added to those implicitly defined by

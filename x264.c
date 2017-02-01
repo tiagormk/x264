@@ -46,6 +46,8 @@
 #include "output/output.h"
 #include "filters/filters.h"
 
+#include <runtime/uapi/beats.h>
+
 #define FAIL_IF_ERROR( cond, ... ) FAIL_IF_ERR( cond, "x264", __VA_ARGS__ )
 
 #if HAVE_LAVF
@@ -907,6 +909,7 @@ static void help( x264_param_t *defaults, int longhelp )
     H2( "      --opencl-clbin <string> Specify path of compiled OpenCL kernel cache\n" );
     H2( "      --opencl-device <integer> Specify OpenCL device ordinal\n" );
     H2( "      --vitaminsfps <float>   Limit input FPS\n" );
+    H2( "      --beatsrate <float>     Sets desired FPS using the beats framework\n" );
     H2( "      --dump-yuv <string>     Save reconstructed frames\n" );
     H2( "      --sps-id <integer>      Set SPS and PPS id numbers [%d]\n", defaults->i_sps_id );
     H2( "      --aud                   Use access unit delimiters\n" );
@@ -1132,6 +1135,7 @@ static struct option long_options[] =
     { "stitchable",        no_argument, NULL, 0 },
     { "filler",            no_argument, NULL, 0 },
     { "vitaminsfps"  ,required_argument, NULL, 0 },
+    { "beatsrate"  ,required_argument, NULL, 0 },
     {0, 0, 0, 0}
 };
 
@@ -1766,6 +1770,15 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
     }
 }
 
+static task_beat_info_t *_vitamins_info = 0;
+static task_beat_data_t *_vitamins_beats = 0;
+
+static inline void beats_frame(void){
+    if(_vitamins_beats){
+        task_beat(_vitamins_beats);
+    }
+}
+
 static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts )
 {
     x264_picture_t pic_out;
@@ -1782,7 +1795,7 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
         i_frame_size = cli_output.write_frame( hout, nal[0].p_payload, i_frame_size, &pic_out );
         *last_dts = pic_out.i_dts;
     }
-
+    
     return i_frame_size;
 }
 
@@ -1874,6 +1887,23 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     if(param->rc.f_vitaminsfps > 0){
         _vitamins_timetonext = (int64_t)((1.0/param->rc.f_vitaminsfps)*1000000);
     }
+
+    if(param->rc.f_beatsrate > 0){
+        _vitamins_info = task_beat_register_task();
+        if(_vitamins_info){
+            _vitamins_beats = task_beat_create_domain(_vitamins_info,BEAT_PERF,(uint64_t)(param->rc.f_beatsrate));
+            if(!_vitamins_beats)
+                fprintf( stderr, "Cannot setup beats!\n");
+            else {
+                fprintf( stderr, "Beats setup with rate = %f beats/s\n",param->rc.f_beatsrate);
+            }
+                
+        }   
+        else {
+           fprintf( stderr, "Cannot use connect to beats sensing module!\n");
+        }   
+    }
+
 
     opt->b_progress &= param->i_log_level < X264_LOG_DEBUG;
 
@@ -1973,6 +2003,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         {
             i_file += i_frame_size;
             i_frame_output++;
+            beats_frame();
             if( i_frame_output == 1 )
                 first_dts = prev_dts = last_dts;
         }
@@ -1998,6 +2029,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         {
             i_file += i_frame_size;
             i_frame_output++;
+            beats_frame();
             if( i_frame_output == 1 )
                 first_dts = prev_dts = last_dts;
         }
@@ -2037,6 +2069,11 @@ fail:
 
         fprintf( stderr, "encoded %d frames, %.2f fps, %.2f kb/s\n", i_frame_output, fps,
                  (double) i_file * 8 / ( 1000 * duration ) );
+                 
+       if(_vitamins_beats && _vitamins_info){
+            fprintf(stderr, "Beats: %llu beats, rate = %f beats/s, tgt = %f beats/s\n",
+                task_beat_read_total(_vitamins_beats),task_beat_read_total_rate(_vitamins_info,_vitamins_beats),task_beat_read_tgt_rate(_vitamins_info,_vitamins_beats));
+       }
     }
 
     return retval;

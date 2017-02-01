@@ -180,6 +180,7 @@ void x264_param_default( x264_param_t *param )
     param->psz_clbin_file = NULL;
     
     param->rc.f_vitaminsfps = 0;
+    param->rc.f_beatsrate = 0;
 }
 
 static int x264_param_apply_preset( x264_param_t *param, const char *preset )
@@ -1052,6 +1053,8 @@ int x264_param_parse( x264_param_t *p, const char *name, const char *value )
         p->i_opencl_device = atoi( value );
     OPT("vitaminsfps")
         p->rc.f_vitaminsfps = atof(value);
+    OPT("beatsrate")
+        p->rc.f_beatsrate = atof(value);
     else
         return X264_PARAM_BAD_NAME;
 #undef OPT
